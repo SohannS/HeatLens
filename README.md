@@ -33,7 +33,7 @@ Pre-built binaries are attached to [GitHub Releases](https://github.com/arogorn9
 
 | Platform | File | Notes |
 |----------|------|-------|
-| **Windows** | `HeatLens.exe` | Double-click to run. Right-click → **Run as administrator** for extra ACPI/storage sensors. |
+| **Windows** | `HeatLens.exe` | Double-click to run. If SmartScreen appears: **More info** → **Run anyway** (unsigned app). Right-click → **Run as administrator** for extra sensors. |
 | **Linux** | `HeatLens` or `HeatLens-linux-x86_64.tar.gz` | `chmod +x HeatLens && ./HeatLens`. Needs X11/Wayland with Tk; RAPL/hwmon may need permissions. |
 | **macOS** | `HeatLens-macos-arm64.tar.gz` | Extract, then open `HeatLens.app`. First launch: right-click → **Open** if Gatekeeper blocks it. |
 
@@ -122,6 +122,9 @@ Install [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHard
 
 **Can I run it pinned on top?**  
 Yes. Check **Pin** in the header, or use **Compact** for a smaller window.
+
+**Windows says "protected your PC" when I run the `.exe`. Is it safe?**  
+That is **Microsoft SmartScreen** blocking unsigned downloads from the internet — common for indie/open-source apps. HeatLens is open source; you can inspect the code or run from source. To launch the portable exe: click **More info** → **Run anyway**. See [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md) for signing and reputation options.
 
 ## Heat math
 

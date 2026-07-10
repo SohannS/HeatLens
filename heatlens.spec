@@ -42,6 +42,8 @@ a = Analysis(
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 is_macos = sys.platform == "darwin"
+is_windows = sys.platform == "win32"
+version_file = str(root / "build" / "version_info.txt") if is_windows else None
 
 exe = EXE(
     pyz,
@@ -54,7 +56,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=not is_macos,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
@@ -63,7 +65,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    version_file=None,
+    version_file=version_file,
 )
 
 if is_macos:

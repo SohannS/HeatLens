@@ -2,6 +2,12 @@
 
 All notable changes to HeatLens are documented here.
 
+## [0.1.5] - 2026-07-10
+
+### Changed
+- Windows portable build: disabled UPX compression and embedded exe version metadata to reduce SmartScreen/AV false positives
+- README and [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md) explain SmartScreen and optional Authenticode signing
+
 ## [0.1.4] - 2026-07-10
 
 ### Added
