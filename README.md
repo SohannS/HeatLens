@@ -10,19 +10,21 @@ HeatLens is a small Python desktop widget that answers a simple question:
 
 > *How much heat is this computer adding to my room right now?*
 
-It shows total wattage, heat dissipation in **BTU/hr**, session heat in **BTU**, live temperatures, and trend graphs — with clear labeling when values come from direct sensors vs estimates.
+It shows total wattage, heat dissipation (**BTU/hr** or **kW**), session heat, live temperatures, trend graphs, and rough room-heating context — with clear labeling when values come from direct sensors vs estimates. Switch between **imperial** and **metric** units in **Options**.
 
 ![HeatLens dashboard](docs/screenshot.png)
 
 ## Features
 
 - **Total wattage** from hardware power sensors, with smart fallbacks
-- **BTU/hr** and **session BTU** using standard conversion constants
+- **Heat dissipation** in BTU/hr or kW, plus **session heat** in BTU or kWh
 - **Max temperature** with Pascal NVIDIA hot-spot handling
-- **Trend graphs** for watts, BTU/hr, and temperature
+- **Trend graphs** for watts, heat, and temperature — optional time axis and Y-axis value labels
+- **CFM cooling estimate** — enter ambient temperature to see approximate **CFM** (or **m³/h** in metric) needed to exhaust PC heat with a +10 °F (+10 °C) rise, plus **still-air room rise** per hour for a reference room size
 - **Sensor inspector** — see every source and what counts toward the total
-- **Ambient input** for above-ambient delta and rough air-heating context
-- **Excel export** for monitoring sessions
+- **Ambient input** for above-ambient delta, air-rise, and airflow estimates
+- **Options** — units (imperial/metric), graph scaling, Windows admin mode, Excel/CSV export formatting
+- **Excel and CSV export** for monitoring sessions (configurable columns, delimiters, timestamps)
 - **Compact mode** for a smaller always-on-top widget
 
 ## Quick start
@@ -123,6 +125,12 @@ Install [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHard
 **Can I run it pinned on top?**  
 Yes. Check **Pin** in the header, or use **Compact** for a smaller window.
 
+**What does the CFM number mean?**  
+Enter ambient temperature (°F or °C) in the header. HeatLens estimates how much **CFM** (cubic feet per minute) of exhaust airflow would be needed to carry away the PC’s heat while keeping exhaust air about **10 °F above ambient** — a rough HVAC-style sanity check, not a duct design tool. In metric mode the same estimate is shown as **m³/h**. You also get **still-air rise**: how fast a closed reference room (~1,000 ft³ / ~28 m³) would warm with no ventilation.
+
+**Can I use metric units?**  
+Yes. **Options → Display system → Metric (C, kW, kWh)**. Ambient converts automatically when you switch.
+
 **Windows says "protected your PC" when I run the `.exe`. Is it safe?**  
 That is **Microsoft SmartScreen** blocking unsigned downloads from the internet — common for indie/open-source apps. HeatLens is open source; you can inspect the code or run from source. To launch the portable exe: click **More info** → **Run anyway**. See [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md) for signing and reputation options.
 
@@ -140,7 +148,9 @@ Session energy uses trapezoidal integration between samples so short spikes are 
 
 When direct sensors only cover CPU/GPU package power, HeatLens can add labeled estimates for motherboard/platform load, RAM DIMMs, NVMe/storage, and PSU conversion loss. Estimated rows are marked with `~` and shown separately in the Sensors view.
 
-Ambient temperature input unlocks above-ambient delta, still-air room rise per 1,000 ft³, and approximate airflow needed for a 10 °F exhaust rise. Ambient does not add BTU/hr by itself.
+Ambient temperature input unlocks above-ambient delta, still-air room rise per 1,000 ft³ (~28 m³), and approximate **cooling airflow (CFM)** needed for a 10 °F exhaust rise (10 °C in metric). Ambient does not add BTU/hr by itself.
+
+The CFM estimate assumes ideal exhaust: all PC heat leaves in the airstream at the target temperature rise. Real rooms mix air, leak heat to walls, and rarely match a single exhaust point — treat the number as context, not a specification.
 
 A wall power meter is still the gold standard for whole-system room heat, because software sensors may omit monitor power, some PSU losses, or parts of the platform.
 
