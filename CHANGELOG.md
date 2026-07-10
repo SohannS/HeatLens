@@ -2,6 +2,18 @@
 
 All notable changes to HeatLens are documented here.
 
+## [0.1.8] - 2026-07-10
+
+### Added
+- **Performance** options: sensor refresh interval (1–10 seconds) and **Low impact mode** for gaming
+
+### Changed
+- Default sensor refresh increased from 1.5s to **3s** to reduce CPU overhead
+- UI updates throttled (~1 Hz), detail tables refresh every 5s, graphs redraw at most once per second
+- Skip redundant Windows WMI/psutil sensor scans when LibreHardwareMonitor HTTP is active
+- Cache LibreHardwareMonitor HTTP URL/port; faster timeouts on cached connections
+- Graph rendering uses downsampling and disables expensive smooth line interpolation
+
 ## [0.1.7] - 2026-07-10
 
 ### Added

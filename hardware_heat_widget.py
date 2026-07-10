@@ -28,8 +28,29 @@ from tkinter import filedialog, messagebox, ttk
 
 
 APP_NAME = "HeatLens"
-APP_VERSION = "0.1.7"
-POLL_INTERVAL_SECONDS = 1.5
+APP_VERSION = "0.1.8"
+DEFAULT_POLL_INTERVAL_SECONDS = 3.0
+UI_REFRESH_INTERVAL_MS = 1000
+TABLE_REFRESH_INTERVAL_SECONDS = 5.0
+GRAPH_REDRAW_INTERVAL_MS = 1000
+GRAPH_MAX_DRAW_POINTS = 240
+QUEUE_DRAIN_INTERVAL_MS = 250
+POLL_INTERVAL_LABELS: tuple[str, ...] = (
+    "1 second",
+    "2 seconds",
+    "3 seconds (recommended)",
+    "5 seconds",
+    "10 seconds",
+)
+POLL_INTERVAL_VALUES: dict[str, float] = {
+    "1 second": 1.0,
+    "2 seconds": 2.0,
+    "3 seconds (recommended)": 3.0,
+    "5 seconds": 5.0,
+    "10 seconds": 10.0,
+}
+PREF_POLL_INTERVAL = "poll_interval_seconds"
+PREF_LOW_IMPACT_MODE = "low_impact_mode"
 GRAPH_X_WINDOW_LABELS: tuple[str, ...] = (
     "Auto",
     "1 minute",
@@ -612,6 +633,13 @@ def _export_label_for_value(value: str, labels: tuple[str, ...], mapping: dict[s
     return labels[0]
 
 
+def _poll_label_for_seconds(seconds: float) -> str:
+    for label, value in POLL_INTERVAL_VALUES.items():
+        if math.isclose(value, seconds, rel_tol=0.0, abs_tol=0.01):
+            return label
+    return POLL_INTERVAL_LABELS[2]
+
+
 def format_export_timestamp(timestamp: datetime, timestamp_format: str) -> object:
     if timestamp_format == "unix":
         return round(timestamp.timestamp(), 3)
@@ -685,13 +713,19 @@ class LibreHardwareMonitorBackend:
 
     def __init__(self) -> None:
         self.namespaces = ("root\\LibreHardwareMonitor", "root\\OpenHardwareMonitor")
-        self.http_timeout_seconds = 1.5
+        self.http_timeout_seconds = 0.8
+        self._cached_http_port: Optional[int] = None
+        self._port_lookup_done = False
+        self._cached_http_url: Optional[str] = None
+        self._http_available = False
 
     def read(self) -> BackendResult:
         http_result = self._read_http()
         if http_result.power or http_result.temperatures:
+            self._http_available = any("HTTP data.json is available" in note for note in http_result.notes)
             return http_result
 
+        self._http_available = False
         wmi_result = self._read_wmi()
         if wmi_result.power or wmi_result.temperatures:
             return wmi_result
@@ -700,7 +734,8 @@ class LibreHardwareMonitorBackend:
 
     def _read_http(self) -> BackendResult:
         failures: list[str] = []
-        for url in self._http_urls():
+        urls = self._http_urls()
+        for url in urls:
             try:
                 request = urllib.request.Request(url, headers={"Accept": "application/json"})
                 with urllib.request.urlopen(request, timeout=self.http_timeout_seconds) as response:
@@ -724,6 +759,7 @@ class LibreHardwareMonitorBackend:
 
             result = self._read_http_tree(data, url)
             if result.power or result.temperatures:
+                self._cached_http_url = url
                 return result
             failures.append(f"{url} returned no power or temperature sensors")
 
@@ -752,12 +788,19 @@ class LibreHardwareMonitorBackend:
                 unique_ports.append(port)
 
         urls: list[str] = []
+        if self._cached_http_url:
+            urls.append(self._cached_http_url)
         for port in unique_ports:
-            urls.append(f"http://127.0.0.1:{port}/data.json")
-            urls.append(f"http://localhost:{port}/data.json")
+            for host in ("127.0.0.1", "localhost"):
+                candidate = f"http://{host}:{port}/data.json"
+                if candidate not in urls:
+                    urls.append(candidate)
         return urls
 
     def _configured_http_port(self) -> Optional[int]:
+        if self._port_lookup_done:
+            return self._cached_http_port
+        self._port_lookup_done = True
         candidates = [Path(__file__).resolve().with_name("LibreHardwareMonitor.config")]
         if getattr(sys, "frozen", False):
             candidates.append(Path(sys.executable).resolve().with_name("LibreHardwareMonitor.config"))
@@ -786,7 +829,8 @@ class LibreHardwareMonitorBackend:
                     continue
                 port = safe_float(item.get("value"))
                 if port is not None and 0 < int(port) <= 65535:
-                    return int(port)
+                    self._cached_http_port = int(port)
+                    return self._cached_http_port
         return None
 
     def _read_http_tree(self, data: object, url: str) -> BackendResult:
@@ -2243,8 +2287,9 @@ class PsutilEstimateBackend:
 
 class SensorCollector:
     def __init__(self) -> None:
+        self.libre_backend = LibreHardwareMonitorBackend()
         self.backends = [
-            LibreHardwareMonitorBackend(),
+            self.libre_backend,
             LinuxRaplBackend(),
             LinuxHwmonBackend(),
             NvidiaSmiBackend(),
@@ -2252,6 +2297,7 @@ class SensorCollector:
             WindowsNativeTemperatureBackend(),
             PsutilEstimateBackend(),
         ]
+        self._libre_http_active = False
 
     def sample(self) -> HardwareSnapshot:
         power: list[SensorReading] = []
@@ -2260,11 +2306,15 @@ class SensorCollector:
         notes: list[str] = []
 
         for backend in self.backends:
+            if self._should_skip_backend(backend):
+                continue
             try:
                 result = backend.read()
             except Exception as exc:
                 notes.append(f"{backend.name}: {exc}")
                 continue
+            if backend is self.libre_backend:
+                self._libre_http_active = self.libre_backend._http_available
             power.extend(result.power)
             temperatures.extend(result.temperatures)
             estimates.extend(result.estimates)
@@ -2323,6 +2373,17 @@ class SensorCollector:
             selected_power=selected,
             notes=compact_notes(notes),
         )
+
+    def _should_skip_backend(self, backend: object) -> bool:
+        if not self._libre_http_active:
+            return False
+        if isinstance(backend, WindowsNativeTemperatureBackend):
+            return True
+        if isinstance(backend, PsutilEstimateBackend):
+            return True
+        if sys.platform != "linux" and isinstance(backend, (LinuxRaplBackend, LinuxHwmonBackend)):
+            return True
+        return False
 
 
 def dedupe_readings(readings: list[SensorReading]) -> list[SensorReading]:
@@ -2709,17 +2770,23 @@ def select_power_for_total(power: list[SensorReading]) -> list[SensorReading]:
 
 
 class Poller(threading.Thread):
-    def __init__(self, output_queue: queue.Queue[HardwareSnapshot], stop_event: threading.Event) -> None:
+    def __init__(
+        self,
+        output_queue: queue.Queue[HardwareSnapshot],
+        stop_event: threading.Event,
+        poll_interval: Callable[[], float],
+    ) -> None:
         super().__init__(daemon=True)
         self.collector = SensorCollector()
         self.output_queue = output_queue
         self.stop_event = stop_event
+        self.poll_interval = poll_interval
 
     def run(self) -> None:
         while not self.stop_event.is_set():
             snapshot = self.collector.sample()
             self.output_queue.put(snapshot)
-            self.stop_event.wait(POLL_INTERVAL_SECONDS)
+            self.stop_event.wait(max(0.5, self.poll_interval()))
 
 
 class StatCard(tk.Frame):
@@ -2791,13 +2858,16 @@ class GraphPanel(tk.Frame):
         ).grid(row=0, column=0, sticky="ew", padx=14, pady=(10, 0))
         self.canvas = tk.Canvas(self, bg=COLORS["panel"], highlightthickness=0, height=248)
         self.canvas.grid(row=1, column=0, sticky="nsew", padx=10, pady=(4, 10))
-        self.canvas.bind("<Configure>", lambda _event: self.redraw())
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
         self.history: deque[dict[str, object]] = deque(maxlen=2000)
         self.show_time = True
         self.show_y_values = True
         self.x_window_seconds: Optional[float] = None
         self.y_scale_mode = "auto"
         self.use_metric = False
+        self._redraw_after_id: Optional[str] = None
+        self._configure_after_id: Optional[str] = None
+        self._redraw_interval_ms = GRAPH_REDRAW_INTERVAL_MS
 
     def apply_options(
         self,
@@ -2813,6 +2883,34 @@ class GraphPanel(tk.Frame):
         self.x_window_seconds = x_window_seconds
         self.y_scale_mode = y_scale_mode
         self.use_metric = use_metric
+        self.schedule_redraw()
+
+    def set_redraw_interval_ms(self, interval_ms: int) -> None:
+        self._redraw_interval_ms = max(250, interval_ms)
+        self.schedule_redraw()
+
+    def _on_canvas_configure(self, _event: object) -> None:
+        if self._configure_after_id is not None:
+            self.after_cancel(self._configure_after_id)
+        self._configure_after_id = self.after(200, self._debounced_configure_redraw)
+
+    def _debounced_configure_redraw(self) -> None:
+        self._configure_after_id = None
+        self.schedule_redraw(force=True)
+
+    def schedule_redraw(self, *, force: bool = False) -> None:
+        if force:
+            if self._redraw_after_id is not None:
+                self.after_cancel(self._redraw_after_id)
+                self._redraw_after_id = None
+            self.redraw()
+            return
+        if self._redraw_after_id is not None:
+            return
+        self._redraw_after_id = self.after(self._redraw_interval_ms, self._run_scheduled_redraw)
+
+    def _run_scheduled_redraw(self) -> None:
+        self._redraw_after_id = None
         self.redraw()
 
     def _band_configs(self) -> list[tuple[str, str, str, str]]:
@@ -2830,7 +2928,13 @@ class GraphPanel(tk.Frame):
 
     def set_show_time(self, enabled: bool) -> None:
         self.show_time = enabled
-        self.redraw()
+        self.schedule_redraw(force=True)
+
+    def _downsample_samples(self, samples: list[dict[str, object]]) -> list[dict[str, object]]:
+        if len(samples) <= GRAPH_MAX_DRAW_POINTS:
+            return samples
+        step = len(samples) / GRAPH_MAX_DRAW_POINTS
+        return [samples[min(len(samples) - 1, int(index * step))] for index in range(GRAPH_MAX_DRAW_POINTS)]
 
     def _visible_samples(self) -> list[dict[str, object]]:
         if not self.history:
@@ -2883,7 +2987,7 @@ class GraphPanel(tk.Frame):
                 "ts": timestamp if timestamp is not None else time.time(),
             }
         )
-        self.redraw()
+        self.schedule_redraw()
 
     def redraw(self) -> None:
         canvas = self.canvas
@@ -2930,7 +3034,7 @@ class GraphPanel(tk.Frame):
             )
             return
 
-        visible = self._visible_samples()
+        visible = self._downsample_samples(self._visible_samples())
         timestamps = [float(sample["ts"]) for sample in visible]
         if not timestamps:
             return
@@ -2981,7 +3085,7 @@ class GraphPanel(tk.Frame):
         bottom = top + height
         canvas.create_rectangle(left, top, right, bottom, fill=COLORS["bg"], outline=COLORS["grid"])
 
-        visible = self._visible_samples()
+        visible = self._downsample_samples(self._visible_samples())
         if key == "kw":
             values = [float(sample["watts"]) / 1000.0 for sample in visible if sample.get("watts") is not None]
         else:
@@ -3058,7 +3162,7 @@ class GraphPanel(tk.Frame):
             last_valid = (x, y)
 
         if len(points) >= 4:
-            canvas.create_line(points, fill=color, width=2.4, smooth=True)
+            canvas.create_line(points, fill=color, width=2.2, smooth=False)
 
     def _format_grid_value(self, value: float, unit: str) -> str:
         if unit == "C":
@@ -3115,6 +3219,9 @@ class MetricTable(tk.Frame):
             self.tree.column(column, width=110, stretch=False, anchor="w")
 
     def set_rows(self, rows: list[tuple[str, ...]]) -> None:
+        if rows == getattr(self, "_last_rows", None):
+            return
+        self._last_rows = rows
         self.tree.delete(*self.tree.get_children())
         if not rows:
             self.tree.insert("", "end", values=tuple(["No readings yet"] + [""] * (len(self.columns) - 1)))
@@ -3208,6 +3315,56 @@ class OptionsWindow(tk.Toplevel):
         tk.Label(
             frame,
             text="Include zero applies to watts and heat (BTU/hr or kW). Temperature always auto-scales to the visible range.",
+            bg=COLORS["bg"],
+            fg=COLORS["muted"],
+            font=("Segoe UI", 9),
+            anchor="w",
+            wraplength=360,
+            justify="left",
+        ).grid(row=row, column=0, columnspan=2, sticky="w", pady=(6, 14))
+        row += 1
+
+        tk.Label(
+            frame,
+            text="Performance",
+            bg=COLORS["bg"],
+            fg=COLORS["text"],
+            font=("Segoe UI", 12, "bold"),
+            anchor="w",
+        ).grid(row=row, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        row += 1
+
+        tk.Label(
+            frame,
+            text="Sensor refresh",
+            bg=COLORS["bg"],
+            fg=COLORS["muted"],
+            font=("Segoe UI", 9),
+            anchor="w",
+        ).grid(row=row, column=0, sticky="w", pady=(4, 4))
+        self.poll_interval_combo = ttk.Combobox(
+            frame,
+            textvariable=app.poll_interval,
+            values=POLL_INTERVAL_LABELS,
+            state="readonly",
+            width=24,
+        )
+        self.poll_interval_combo.grid(row=row, column=1, sticky="e", pady=(4, 4))
+        self.poll_interval_combo.bind("<<ComboboxSelected>>", lambda _event: app._apply_performance_options())
+        row += 1
+
+        ttk.Checkbutton(
+            frame,
+            text="Low impact mode (slower refresh, less UI work)",
+            variable=app.low_impact_mode,
+            command=app._apply_performance_options,
+            style="HeatLens.TCheckbutton",
+        ).grid(row=row, column=0, columnspan=2, sticky="w")
+        row += 1
+
+        tk.Label(
+            frame,
+            text="Use 3–5 seconds while gaming. Low impact mode is best for reducing stutter and 1% lows.",
             bg=COLORS["bg"],
             fg=COLORS["muted"],
             font=("Segoe UI", 9),
@@ -3588,7 +3745,21 @@ class HeatLensApp:
 
         self.queue: queue.Queue[HardwareSnapshot] = queue.Queue()
         self.stop_event = threading.Event()
-        self.poller = Poller(self.queue, self.stop_event)
+        self.preferences = HeatLensPreferences()
+        saved_poll = safe_float(self.preferences.get_str(PREF_POLL_INTERVAL, str(DEFAULT_POLL_INTERVAL_SECONDS)))
+        self.poll_interval = tk.StringVar(
+            value=_poll_label_for_seconds(saved_poll if saved_poll is not None else DEFAULT_POLL_INTERVAL_SECONDS)
+        )
+        self.low_impact_mode = tk.BooleanVar(
+            value=self.preferences.get_bool(PREF_LOW_IMPACT_MODE, False)
+        )
+        self.poller = Poller(self.queue, self.stop_event, self._poll_interval_seconds)
+        self._pending_display_snapshot: Optional[HardwareSnapshot] = None
+        self._ui_refresh_after_id: Optional[str] = None
+        self._last_display_refresh = 0.0
+        self._last_table_refresh = 0.0
+        self._ui_refresh_interval_ms = UI_REFRESH_INTERVAL_MS
+        self._table_refresh_interval_seconds = TABLE_REFRESH_INTERVAL_SECONDS
 
         self.last_snapshot: Optional[HardwareSnapshot] = None
         self.session_wh = 0.0
@@ -3604,7 +3775,6 @@ class HeatLensApp:
         self.show_graph_y_values = tk.BooleanVar(value=True)
         self.graph_x_window = tk.StringVar(value="Auto")
         self.graph_y_scale = tk.StringVar(value="Auto")
-        self.preferences = HeatLensPreferences()
         saved_units = self.preferences.get_str(PREF_UNITS, "imperial")
         units_label = UNIT_SYSTEM_LABELS[1] if saved_units == "metric" else UNIT_SYSTEM_LABELS[0]
         self.units_system = tk.StringVar(value=units_label)
@@ -3649,10 +3819,11 @@ class HeatLensApp:
 
         configure_ttk_style()
         self._build_ui()
+        self._apply_performance_options(initial=True)
         self._apply_units_option(initial=True)
         self._apply_graph_options()
         self.poller.start()
-        self.root.after(150, self._drain_queue)
+        self.root.after(QUEUE_DRAIN_INTERVAL_MS, self._drain_queue)
         self.root.after(900, lambda: self.libre_helper.maybe_prompt_on_startup(
             self.root,
             on_status=self._libre_status,
@@ -3930,6 +4101,22 @@ class HeatLensApp:
             use_metric=self._use_metric(),
         )
 
+    def _poll_interval_seconds(self) -> float:
+        if self.low_impact_mode.get():
+            return 5.0
+        return POLL_INTERVAL_VALUES.get(self.poll_interval.get(), DEFAULT_POLL_INTERVAL_SECONDS)
+
+    def _apply_performance_options(self, initial: bool = False) -> None:
+        low_impact = self.low_impact_mode.get()
+        self.preferences.set_bool(PREF_LOW_IMPACT_MODE, low_impact)
+        if not low_impact:
+            self.preferences.set_str(PREF_POLL_INTERVAL, str(self._poll_interval_seconds()))
+        self._ui_refresh_interval_ms = 2000 if low_impact else UI_REFRESH_INTERVAL_MS
+        self._table_refresh_interval_seconds = 10.0 if low_impact else TABLE_REFRESH_INTERVAL_SECONDS
+        self.graph.set_redraw_interval_ms(2000 if low_impact else GRAPH_REDRAW_INTERVAL_MS)
+        if not initial and self._pending_display_snapshot is not None:
+            self._schedule_display_refresh()
+
     def _export_settings(self) -> ExportSettings:
         return ExportSettings(
             file_format=EXPORT_FORMAT_VALUES.get(self.export_format.get(), "xlsx"),
@@ -4103,21 +4290,77 @@ class HeatLensApp:
             self.compact_button.configure(text="Compact")
 
     def _drain_queue(self) -> None:
-        latest: Optional[HardwareSnapshot] = None
+        snapshots: list[HardwareSnapshot] = []
         while True:
             try:
-                latest = self.queue.get_nowait()
+                snapshots.append(self.queue.get_nowait())
             except queue.Empty:
                 break
-        if latest is not None:
-            self._apply_snapshot(latest)
+        if snapshots:
+            self._process_snapshots(snapshots)
         if not self.stop_event.is_set():
-            self.root.after(250, self._drain_queue)
+            self.root.after(QUEUE_DRAIN_INTERVAL_MS, self._drain_queue)
+
+    def _process_snapshots(self, snapshots: list[HardwareSnapshot]) -> None:
+        ambient_f = self._ambient_temp_f()
+        for snapshot in snapshots:
+            if self.last_snapshot is not None:
+                self._update_session_energy(snapshot)
+            self._append_log_entry(snapshot, ambient_f)
+            self.graph.add_sample(
+                snapshot.total_watts,
+                snapshot.btu_per_hour,
+                snapshot.max_temp_c,
+                timestamp=snapshot.taken_at,
+            )
+            self.last_snapshot = snapshot
+        self._pending_display_snapshot = snapshots[-1]
+        self._schedule_display_refresh()
+
+    def _schedule_display_refresh(self) -> None:
+        if self._ui_refresh_after_id is not None:
+            return
+        delay = self._ui_refresh_interval_ms
+        if self._last_display_refresh > 0.0:
+            elapsed_ms = (time.monotonic() - self._last_display_refresh) * 1000.0
+            delay = max(0, int(self._ui_refresh_interval_ms - elapsed_ms))
+        self._ui_refresh_after_id = self.root.after(delay, self._flush_display_refresh)
+
+    def _flush_display_refresh(self) -> None:
+        self._ui_refresh_after_id = None
+        snapshot = self._pending_display_snapshot
+        if snapshot is None:
+            return
+        self._pending_display_snapshot = None
+        self._last_display_refresh = time.monotonic()
+        refresh_tables = (
+            self._last_table_refresh <= 0.0
+            or (time.monotonic() - self._last_table_refresh) >= self._table_refresh_interval_seconds
+        )
+        self._refresh_display(snapshot, refresh_tables=refresh_tables)
+        if refresh_tables:
+            self._last_table_refresh = time.monotonic()
+        if self._pending_display_snapshot is not None:
+            self._schedule_display_refresh()
 
     def _apply_snapshot(self, snapshot: HardwareSnapshot, update_session: bool = True) -> None:
         if update_session:
-            self._update_session_energy(snapshot)
-        self.last_snapshot = snapshot
+            ambient_f = self._ambient_temp_f()
+            if self.last_snapshot is not None:
+                self._update_session_energy(snapshot)
+            self._append_log_entry(snapshot, ambient_f)
+            self.graph.add_sample(
+                snapshot.total_watts,
+                snapshot.btu_per_hour,
+                snapshot.max_temp_c,
+                timestamp=snapshot.taken_at,
+            )
+            self.last_snapshot = snapshot
+        else:
+            self.last_snapshot = snapshot
+        self._refresh_display(snapshot, refresh_tables=True)
+
+    def _refresh_display(self, snapshot: HardwareSnapshot, *, refresh_tables: bool) -> None:
         metric = self._use_metric()
         ambient_f = self._ambient_temp_f()
 
@@ -4146,16 +4389,9 @@ class HeatLensApp:
         temp_label = f"{temp_count} temperature sensor" + ("" if temp_count == 1 else "s")
         self.temp_card.set(format_temp(snapshot.max_temp_c, metric=metric), temp_label)
 
-        if update_session:
-            self._append_log_entry(snapshot, ambient_f)
-            self.graph.add_sample(
-                snapshot.total_watts,
-                snapshot.btu_per_hour,
-                snapshot.max_temp_c,
-                timestamp=snapshot.taken_at,
-            )
-        self.power_table.set_rows(self._power_rows(snapshot, ambient_f))
-        self.temp_table.set_rows(self._temperature_rows(snapshot, ambient_f))
+        if refresh_tables and not self.compact:
+            self.power_table.set_rows(self._power_rows(snapshot, ambient_f))
+            self.temp_table.set_rows(self._temperature_rows(snapshot, ambient_f))
         if self.source_window is not None and self.source_window.winfo_exists():
             self.source_window.update_snapshot(snapshot)
         self.note_label.configure(text=self._status_note(snapshot, ambient_f))
