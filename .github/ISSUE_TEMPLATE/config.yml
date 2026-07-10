@@ -1,0 +1,8 @@
+blank_issues: false
+contact_links:
+  - name: Questions & ideas
+    url: https://github.com/arogorn993-hue/HeatLens/discussions
+    about: Ask questions, share how you use HeatLens, or suggest features (preferred for general chat)
+  - name: Releases & downloads
+    url: https://github.com/arogorn993-hue/HeatLens/releases
+    about: Portable Windows, Linux, and macOS builds

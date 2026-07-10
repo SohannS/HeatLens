@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#quick-start)
+[![GitHub stars](https://img.shields.io/github/stars/arogorn993-hue/HeatLens?style=social)](https://github.com/arogorn993-hue/HeatLens/stargazers)
 
 HeatLens is a small Python desktop widget that answers a simple question:
 
@@ -56,6 +57,14 @@ Session logging and graph history still record every sensor sample; only screen 
 3. Pin the widget if you want it visible without alt-tabbing to a full dashboard
 
 HeatLens is a monitor, not a game overlay. It should be lightweight, but if you are squeezing maximum FPS, Low impact mode + Compact is the intended setup.
+
+## Community
+
+- **[Discussions](https://github.com/arogorn993-hue/HeatLens/discussions)** — questions, show-and-tell, ideas (best for general chat)
+- **[Issues](https://github.com/arogorn993-hue/HeatLens/issues)** — bugs and feature requests
+- **[Releases](https://github.com/arogorn993-hue/HeatLens/releases)** — portable downloads
+
+If HeatLens helps you, a **star** on GitHub helps others find it — totally optional.
 
 ## Quick start
 

@@ -1,0 +1,15 @@
+title: General
+labels:
+  - general
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions, feedback, or anything that doesn't fit the other categories.
+  - type: textarea
+    id: body
+    attributes:
+      label: Message
+      description: OS, HeatLens version, and sensor setup help us respond faster.
+    validations:
+      required: true

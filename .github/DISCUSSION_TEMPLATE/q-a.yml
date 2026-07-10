@@ -1,0 +1,30 @@
+title: Q&A
+labels:
+  - q-a
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask about sensors, BTU/CFM estimates, accuracy, LibreHardwareMonitor, exports, or performance options.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: HeatLens version (optional)
+      placeholder: e.g. 0.1.8
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
