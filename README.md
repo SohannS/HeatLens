@@ -24,8 +24,8 @@ It shows total wattage, heat dissipation (**BTU/hr** or **kW**), session heat, l
 - **CFM cooling estimate** — enter ambient temperature to see approximate **CFM** (or **m³/h** in metric) needed to exhaust PC heat with a +10 °F (+10 °C) rise, plus **still-air room rise** per hour for a reference room size
 - **Sensor inspector** — see every source and what counts toward the total
 - **Ambient input** for above-ambient delta, air-rise, and airflow estimates
-- **Options** — units (imperial/metric), graph scaling, Windows admin mode, Excel/CSV export formatting
-- **Performance controls** — adjustable sensor refresh and **Low impact mode** to reduce CPU use and gaming stutter
+- **Options** — units (imperial/metric), graph scaling, Windows admin mode, Excel/CSV export formatting, **optional LibreHardwareMonitor** (built-in sensors only if you prefer)
+- **Performance controls** — adjustable sensor refresh and **Low impact mode** to reduce CPU use and gaming stutter; smooth window drag/resize and non-blocking startup
 - **Excel and CSV export** for monitoring sessions (configurable columns, delimiters, timestamps)
 - **Compact mode** for a smaller always-on-top widget (also skips heavy detail-table updates)
 
@@ -33,14 +33,15 @@ It shows total wattage, heat dissipation (**BTU/hr** or **kW**), session heat, l
 
 HeatLens reads hardware sensors in the background and updates a live dashboard. Early versions polled aggressively and redrew the full UI on every sample, which could cause micro-stutter or hurt **1% lows** while gaming.
 
-**v0.1.8+** is tuned to stay out of your way:
+**v0.1.10+** is tuned to stay out of your way:
 
 | What | Default behavior |
 |------|------------------|
 | **Sensor refresh** | Every **3 seconds** (was 1.5s) |
 | **Top cards** (watts, BTU, temps) | Update about **once per second** |
 | **Detail tables** | Rebuild every **5 seconds** (skipped entirely in **Compact** mode) |
-| **Trend graphs** | Redraw at most **once per second**, with downsampled points |
+| **Trend graphs** | Redraw at most **once per second**, with downsampled points; **paused while dragging/resizing** the window |
+| **LibreHardwareMonitor detection** | Runs on a **background thread** at startup and during retries — the window stays responsive even when Libre is off |
 | **LibreHardwareMonitor HTTP** | When active, redundant WMI/psutil scans are skipped; the working URL is cached |
 
 Open **Options → Performance** to change this:
@@ -134,23 +135,30 @@ macOS support is estimate-oriented (CPU load + any temperatures `psutil` can see
 
 ## Best sensor results
 
+**LibreHardwareMonitor is optional.** HeatLens works out of the box with `nvidia-smi`, Linux sensors, and estimates. If you do not want Libre at all, open **Options → Sensors** and enable **Don't use LibreHardwareMonitor** — or choose **Cancel** on the startup prompt to turn Libre off. The status bar will show **"LibreHardwareMonitor is off"** and HeatLens keeps reporting from built-in sources.
+
 For the most complete Windows sensor coverage, run [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) with its web server enabled. HeatLens checks:
 
-1. Libre/OpenHardwareMonitor `data.json` over HTTP (default port `8085`)
+1. Libre/OpenHardwareMonitor `data.json` over HTTP — **auto-detects the port** the running Libre process is listening on (not just default `8085`), plus configured port and fallbacks `8086` / `8080`
 2. Libre/OpenHardwareMonitor WMI namespaces
 3. `nvidia-smi` for NVIDIA GPU power/temperature
 4. Native Windows ACPI and storage WMI counters (admin may be required)
 5. Linux RAPL / hwmon / `rocm-smi` on supported systems
 6. CPU/platform estimates through `psutil` when direct power sensors are unavailable
 
+**Port conflict?** If another app (e.g. a game client) already uses port `8085`, set Libre's Remote Web Server to a different port (e.g. `8086`) in **Options → Remote Web Server → Port**. HeatLens will find it automatically once **Run** is enabled.
+
 Use the **Sensors** button in HeatLens to see each live sensor, its source backend, and whether it contributes to total wattage.
 
-On Windows, HeatLens can also **start LibreHardwareMonitor for you** if it is installed, or open the download page if it is not. Use the **Libre** button in the header any time to retry.
+On Windows, HeatLens can also **start LibreHardwareMonitor for you** if it is installed, or open the download page if it is not. Use the **Libre** button in the header any time to retry (hidden when Libre is turned off in Options).
 
 ## FAQ
 
 **Do I need LibreHardwareMonitor?**  
-No. HeatLens works with `nvidia-smi`, Linux sensors, and estimates. Libre just gives the best coverage on Windows (CPU package power, motherboard, RAM, NVMe).
+No. HeatLens works with `nvidia-smi`, Linux sensors, and estimates. Libre gives the best coverage on Windows (CPU package power, motherboard, RAM, NVMe) if you want it — but you can turn it off entirely in **Options → Sensors** or by choosing **Cancel** on the startup prompt.
+
+**Another app is using port 8085 — will Libre still work?**  
+Yes. Set Libre's Remote Web Server to a different port (e.g. `8086`). HeatLens auto-detects whatever port the running Libre process is listening on.
 
 **Why does it say "estimated" wattage?**  
 Some parts of a PC do not expose power sensors in software. HeatLens labels those rows with `~` so you can see what was measured directly vs inferred.
@@ -159,7 +167,7 @@ Some parts of a PC do not expose power sensors in software. HeatLens labels thos
 Software usually cannot see monitor power, full PSU loss, or every platform rail. A plug-in meter at the wall is still the most accurate whole-system reading.
 
 **How do I get the best results on Windows?**  
-Install [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor), click **Libre** in HeatLens to start it, then enable **Options → Remote Web Server → Run** (port 8085).
+Install [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor), click **Libre** in HeatLens to start it, then enable **Options → Remote Web Server → Run**. If port `8085` is taken, pick another port — HeatLens will find it. Or skip Libre entirely and use built-in sensors/estimates.
 
 **Can I run it pinned on top?**  
 Yes. Check **Pin** in the header, or use **Compact** for a smaller window.
