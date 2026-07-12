@@ -2,7 +2,7 @@
 
 All notable changes to HeatLens are documented here.
 
-## [Unreleased]
+## [0.1.9] - 2026-07-11
 
 ### Fixed
 - **Window drag/resize stutter**, most noticeable in **Low impact mode**: the graph now suspends its redraw and defers label/table refreshes while the window is being moved or resized, then catches up once movement settles

@@ -28,7 +28,7 @@ from tkinter import filedialog, messagebox, ttk
 
 
 APP_NAME = "HeatLens"
-APP_VERSION = "0.1.8"
+APP_VERSION = "0.1.9"
 DEFAULT_POLL_INTERVAL_SECONDS = 3.0
 UI_REFRESH_INTERVAL_MS = 1000
 TABLE_REFRESH_INTERVAL_SECONDS = 5.0
